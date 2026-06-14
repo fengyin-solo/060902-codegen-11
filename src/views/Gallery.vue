@@ -3,9 +3,36 @@
     <div class="gallery-header">
       <h2>🏛️ 匿名广场</h2>
       <p>看看别人挂出来的短信，猜猜上下文是什么</p>
+
+      <div class="gallery-filter" v-if="allTagValues.length > 0">
+        <span class="filter-label">🏷️ 按标签筛选：</span>
+        <button 
+          class="filter-tag-btn"
+          :class="{ active: !selectedGalleryTag }"
+          @click="selectedGalleryTag = null"
+        >
+          全部
+        </button>
+        <button 
+          v-for="tv in allTagValues" 
+          :key="tv"
+          class="filter-tag-btn"
+          :class="{ active: selectedGalleryTag === tv }"
+          @click="selectedGalleryTag = selectedGalleryTag === tv ? null : tv"
+        >
+          {{ tv }}
+        </button>
+      </div>
     </div>
 
-    <div v-if="allPosts.length === 0" class="empty-state">
+    <div v-if="filteredPosts.length === 0 && allPosts.length > 0" class="empty-state">
+      <div class="icon">🔍</div>
+      <h3>没有匹配的短信</h3>
+      <p>换个标签试试，或者清除筛选条件</p>
+      <button class="btn btn-primary" @click="selectedGalleryTag = null">清除筛选</button>
+    </div>
+
+    <div v-else-if="allPosts.length === 0" class="empty-state">
       <div class="icon">📭</div>
       <h3>广场还空空的</h3>
       <p>去情书墙挂出第一条短信，让大家猜猜看吧！</p>
@@ -14,7 +41,7 @@
 
     <div v-else class="posts-grid">
       <div 
-        v-for="post in allPosts" 
+        v-for="post in filteredPosts" 
         :key="post.id"
         class="post-card card"
       >
@@ -34,14 +61,21 @@
           "{{ post.message }}"
         </div>
 
-        <div class="post-tags" v-if="post.tags.length > 0">
+        <div class="post-tags" v-if="post.tags.length > 0 || (post.customTags && post.customTags.length > 0)">
           <span 
             v-for="tag in post.tags" 
-            :key="tag.type"
+            :key="tag.type + '-' + tag.text"
             class="tag"
             :class="'tag-' + tag.type"
           >
             {{ tag.text }}
+          </span>
+          <span 
+            v-for="ct in (post.customTags || [])" 
+            :key="'custom-' + ct"
+            class="tag tag-custom"
+          >
+            🏷️ {{ ct }}
           </span>
         </div>
 
@@ -88,14 +122,40 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { store } from '@/store'
+
+const selectedGalleryTag = ref(null)
 
 const allPosts = computed(() => {
   return [
     ...store.anonymousPosts,
     ...demoPosts
   ].sort((a, b) => b.date - a.date)
+})
+
+const allTagValues = computed(() => {
+  const tagSet = new Set()
+  for (const post of allPosts.value) {
+    for (const tag of post.tags) {
+      tagSet.add(tag.text)
+    }
+    if (post.customTags) {
+      for (const ct of post.customTags) {
+        tagSet.add(ct)
+      }
+    }
+  }
+  return Array.from(tagSet).sort()
+})
+
+const filteredPosts = computed(() => {
+  if (!selectedGalleryTag.value) return allPosts.value
+  return allPosts.value.filter(post => {
+    const tagTexts = post.tags.map(t => t.text)
+    const customTexts = post.customTags || []
+    return [...tagTexts, ...customTexts].includes(selectedGalleryTag.value)
+  })
 })
 
 const demoPosts = [
@@ -307,5 +367,44 @@ onMounted(() => {
   padding: 0.5rem;
   background: white;
   border-radius: 6px;
+}
+
+.gallery-filter {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.gallery-filter .filter-label {
+  color: var(--text-light);
+}
+
+.filter-tag-btn {
+  padding: 0.4rem 0.8rem;
+  border: 2px solid var(--border);
+  background: white;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-size: 0.85rem;
+}
+
+.filter-tag-btn:hover {
+  border-color: var(--love-pink);
+}
+
+.filter-tag-btn.active {
+  background: linear-gradient(135deg, var(--love-red), var(--love-pink));
+  color: white;
+  border-color: transparent;
+}
+
+.tag-custom {
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
 }
 </style>

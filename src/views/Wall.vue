@@ -16,6 +16,19 @@
           {{ mode.label }}
         </button>
       </div>
+
+      <div class="filter-bar custom-tag-filter" v-if="allCustomTagValues.length > 0">
+        <span class="filter-label">🏷️ 自定义标签：</span>
+        <button 
+          v-for="ct in allCustomTagValues" 
+          :key="ct"
+          class="mode-btn tag-filter-btn"
+          :class="{ active: selectedCustomTag === ct }"
+          @click="selectedCustomTag = selectedCustomTag === ct ? null : ct"
+        >
+          {{ ct }}
+        </button>
+      </div>
     </div>
 
     <div v-if="store.loveLetters.length === 0" class="empty-state">
@@ -104,7 +117,7 @@
                 {{ msg.body }}
               </div>
               
-              <div class="exhibit-tags" v-if="msg.highlights && msg.highlights.length > 0">
+              <div class="exhibit-tags" v-if="(msg.highlights && msg.highlights.length > 0) || store.getCustomTags(msg.id).length > 0">
                 <span 
                   v-for="hl in msg.highlights" 
                   :key="hl.type"
@@ -113,11 +126,22 @@
                 >
                   {{ hl.text }}
                 </span>
+                <span 
+                  v-for="ct in store.getCustomTags(msg.id)" 
+                  :key="'custom-' + ct"
+                  class="tag tag-custom"
+                >
+                  🏷️ {{ ct }}
+                  <span class="tag-remove" @click.stop="store.removeCustomTag(msg.id, ct)">×</span>
+                </span>
               </div>
               
               <div class="exhibit-actions">
                 <button class="action-btn" @click.stop="viewConversation(letter)">
                   👀 看对话
+                </button>
+                <button class="action-btn" @click.stop="openTagInput(msg)">
+                  🏷️ 标签
                 </button>
                 <button class="action-btn primary" @click.stop="hangUp(letter, msg)">
                   📌 挂出去
@@ -162,6 +186,25 @@
                 <div class="chat-bubble">
                   {{ msg.body }}
                 </div>
+                <div class="chat-tags" v-if="(msg.highlights && msg.highlights.length > 0) || store.getCustomTags(msg.id).length > 0">
+                  <span 
+                    v-for="hl in msg.highlights" 
+                    :key="hl.type"
+                    class="tag"
+                    :class="'tag-' + hl.type"
+                  >
+                    {{ hl.text }}
+                  </span>
+                  <span 
+                    v-for="ct in store.getCustomTags(msg.id)" 
+                    :key="'custom-' + ct"
+                    class="tag tag-custom"
+                  >
+                    🏷️ {{ ct }}
+                    <span class="tag-remove" @click.stop="store.removeCustomTag(msg.id, ct)">×</span>
+                  </span>
+                  <button class="add-tag-inline-btn" @click.stop="openTagInput(msg)">+</button>
+                </div>
                 <div class="chat-time">{{ formatDate(msg.date) }}</div>
               </div>
             </div>
@@ -187,6 +230,27 @@
               </div>
             </div>
           </div>
+
+          <div class="hangup-tags-preview" v-if="hangUpCustomTags.length > 0 || (selectedMessageToHang?.highlights && selectedMessageToHang.highlights.length > 0)">
+            <span class="filter-label">将随短信展示的标签：</span>
+            <div class="hangup-tags-list">
+              <span 
+                v-for="hl in (selectedMessageToHang?.highlights || [])" 
+                :key="hl.type"
+                class="tag"
+                :class="'tag-' + hl.type"
+              >
+                {{ hl.text }}
+              </span>
+              <span 
+                v-for="ct in hangUpCustomTags" 
+                :key="'custom-' + ct"
+                class="tag tag-custom"
+              >
+                🏷️ {{ ct }}
+              </span>
+            </div>
+          </div>
           
           <div class="options">
             <label>
@@ -202,6 +266,49 @@
           <div class="modal-actions">
             <button class="btn btn-secondary" @click="showHangUpModal = false">取消</button>
             <button class="btn btn-primary" @click="confirmHangUp">确认挂出</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showTagModal" class="conversation-modal" @click.self="showTagModal = false">
+      <div class="modal-content card tag-modal">
+        <div class="modal-header">
+          <h3>🏷️ 添加自定义标签</h3>
+          <button class="close-btn" @click="showTagModal = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="tag-input-row">
+            <input 
+              v-model="newTagText" 
+              class="tag-input"
+              placeholder="输入标签名称，回车添加"
+              @keyup.enter="addTag"
+              maxlength="10"
+            />
+            <button class="btn btn-primary tag-add-btn" @click="addTag" :disabled="!newTagText.trim()">添加</button>
+          </div>
+          <div class="tag-suggestions" v-if="tagSuggestions.length > 0">
+            <span class="filter-label">推荐标签：</span>
+            <button 
+              v-for="s in tagSuggestions" 
+              :key="s"
+              class="suggestion-btn"
+              @click="addSuggestionTag(s)"
+            >
+              {{ s }}
+            </button>
+          </div>
+          <div class="current-tags" v-if="taggingMessage && store.getCustomTags(taggingMessage.id).length > 0">
+            <span class="filter-label">已有标签：</span>
+            <span 
+              v-for="ct in store.getCustomTags(taggingMessage.id)" 
+              :key="ct"
+              class="tag tag-custom"
+            >
+              🏷️ {{ ct }}
+              <span class="tag-remove" @click="store.removeCustomTag(taggingMessage.id, ct)">×</span>
+            </span>
           </div>
         </div>
       </div>
@@ -227,12 +334,35 @@ const hangUpOptions = ref({
  anonymous: true
 });
 const messageRefs = ref({});
+const showTagModal = ref(false);
+const taggingMessage = ref(null);
+const newTagText = ref('');
+const selectedCustomTag = ref(null);
 const displayModes = [
  { value: 'all', label: '全部' },
  { value: 'love', label: '💖 情书模式' },
  { value: 'quarrel', label: '🔥 争吵模式' },
  { value: 'cute', label: '🥺 撒娇模式' }
 ];
+const SUGGESTED_TAGS = ['异地恋', '纪念日', '表白', '冷战', '和好', '暧昧', '热恋', '纪念日', '平淡期', '蜜月期', '暖心', '心碎'];
+const tagSuggestions = computed(() => {
+ if (!taggingMessage.value) return SUGGESTED_TAGS;
+ const existing = store.getCustomTags(taggingMessage.value.id);
+ return SUGGESTED_TAGS.filter(s => !existing.includes(s));
+});
+const allCustomTagValues = computed(() => {
+ const tagSet = new Set();
+ for (const key of Object.keys(store.customTags)) {
+   for (const t of store.customTags[key]) {
+     tagSet.add(t);
+   }
+ }
+ return Array.from(tagSet).sort();
+});
+const hangUpCustomTags = computed(() => {
+ if (!selectedMessageToHang.value) return [];
+ return store.getCustomTags(selectedMessageToHang.value.id);
+});
 const lineColor = computed(() => {
  switch (displayMode.value) {
  case 'quarrel': return '#e74c3c';
@@ -241,22 +371,43 @@ const lineColor = computed(() => {
  }
 });
 const displayedLetters = computed(() => {
- if (displayMode.value === 'all')
- return store.loveLetters;
- return store.loveLetters.filter(l => {
- const tagStr = l.tags.join('');
- if (displayMode.value === 'love') {
- return tagStr.includes('想念') || tagStr.includes('爱意') || tagStr.includes('晚安');
+ let result = store.loveLetters;
+ if (displayMode.value !== 'all') {
+   result = result.filter(l => {
+     const tagStr = l.tags.join('');
+     if (displayMode.value === 'love') {
+       return tagStr.includes('想念') || tagStr.includes('爱意') || tagStr.includes('晚安');
+     }
+     if (displayMode.value === 'quarrel') {
+       return tagStr.includes('争吵') || tagStr.includes('冤家') || tagStr.includes('情绪');
+     }
+     if (displayMode.value === 'cute') {
+       return tagStr.includes('撒娇') || tagStr.includes('可爱') || tagStr.includes('叠字');
+     }
+     return true;
+   });
  }
- if (displayMode.value === 'quarrel') {
- return tagStr.includes('争吵') || tagStr.includes('冤家') || tagStr.includes('情绪');
+ if (selectedCustomTag.value) {
+   result = result.filter(l => {
+     return l.highlightedMessages.some(msg => store.getCustomTags(msg.id).includes(selectedCustomTag.value));
+   });
  }
- if (displayMode.value === 'cute') {
- return tagStr.includes('撒娇') || tagStr.includes('可爱') || tagStr.includes('叠字');
- }
- return true;
- });
+ return result;
 });
+function openTagInput(msg) {
+ taggingMessage.value = msg;
+ newTagText.value = '';
+ showTagModal.value = true;
+}
+function addTag() {
+ if (!newTagText.value.trim() || !taggingMessage.value) return;
+ store.addCustomTag(taggingMessage.value.id, newTagText.value.trim());
+ newTagText.value = '';
+}
+function addSuggestionTag(tag) {
+ if (!taggingMessage.value) return;
+ store.addCustomTag(taggingMessage.value.id, tag);
+}
 function setMessageRef(letter, idx, el) {
  const key = letter.conversation.id + '-' + idx;
  if (el) {
@@ -325,6 +476,7 @@ function hangUp(letter, msg) {
 function confirmHangUp() {
  if (!selectedMessageToHang.value || !selectedLetterToHang.value)
  return;
+ const customTags = store.getCustomTags(selectedMessageToHang.value.id);
  const post = {
  id: Math.random().toString(36).substr(2, 9),
  message: selectedMessageToHang.value.body,
@@ -335,7 +487,8 @@ function confirmHangUp() {
  prev: getContextMessage(selectedLetterToHang.value, selectedMessageToHang.value, -1),
  next: getContextMessage(selectedLetterToHang.value, selectedMessageToHang.value, 1)
  },
- tags: selectedMessageToHang.value.highlights || [],
+ tags: [...(selectedMessageToHang.value.highlights || []), ...customTags.map(t => ({ type: 'custom', text: t }))],
+ customTags: customTags,
  guesses: [],
  anonymous: hangUpOptions.value.anonymous,
  originalConversation: hangUpOptions.value.anonymous ? null : selectedLetterToHang.value.conversation.name
@@ -753,5 +906,170 @@ onMounted(() => {
   gap: 1rem;
   padding-top: 1.5rem;
   border-top: 1px solid var(--border);
+}
+
+.custom-tag-filter {
+  margin-top: 0.75rem;
+}
+
+.tag-filter-btn {
+  font-size: 0.85rem;
+  padding: 0.4rem 0.8rem;
+}
+
+.tag-custom {
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+  position: relative;
+  padding-right: 1.5rem;
+}
+
+.tag-remove {
+  position: absolute;
+  top: -4px;
+  right: 2px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: #999;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.tag-remove:hover {
+  color: var(--love-red);
+}
+
+.add-tag-inline-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px dashed var(--border);
+  background: white;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-light);
+  transition: all 0.3s;
+  margin-left: 0.25rem;
+  vertical-align: middle;
+}
+
+.add-tag-inline-btn:hover {
+  border-color: var(--love-pink);
+  color: var(--love-red);
+}
+
+.chat-tags {
+  margin-top: 0.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.chat-tags .tag {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+}
+
+.chat-tags .tag-custom {
+  position: relative;
+  padding-right: 1.2rem;
+}
+
+.hangup-tags-preview {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background: var(--bg-light);
+  border-radius: 8px;
+}
+
+.hangup-tags-preview .filter-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.hangup-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tag-modal {
+  max-width: 420px;
+}
+
+.tag-input-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.tag-input {
+  flex: 1;
+  padding: 0.6rem 1rem;
+  border: 2px solid var(--border);
+  border-radius: 20px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: border-color 0.3s;
+  outline: none;
+}
+
+.tag-input:focus {
+  border-color: var(--love-pink);
+}
+
+.tag-add-btn {
+  padding: 0.6rem 1.2rem;
+  font-size: 0.9rem;
+}
+
+.tag-suggestions {
+  margin-bottom: 1rem;
+}
+
+.tag-suggestions .filter-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.suggestion-btn {
+  display: inline-block;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--border);
+  background: white;
+  border-radius: 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  margin: 0.25rem 0.25rem;
+  transition: all 0.3s;
+}
+
+.suggestion-btn:hover {
+  border-color: var(--love-pink);
+  background: #fff5f5;
+  color: var(--love-red);
+}
+
+.current-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.current-tags .filter-label {
+  font-size: 0.85rem;
+}
+
+.current-tags .tag-custom {
+  position: relative;
+  padding-right: 1.2rem;
 }
 </style>

@@ -172,6 +172,7 @@ main {
 .tag-sorry { background: #fff8e1; color: #f57f17; }
 .tag-night { background: #e8eaf6; color: #283593; }
 .tag-miss { background: #f3e5f5; color: #6a1b9a; }
+.tag-custom { background: linear-gradient(135deg, #e8f5e9, #c8e6c9); color: #2e7d32; border: 1px solid #a5d6a7; }
 
 .loading {
   display: inline-block;
