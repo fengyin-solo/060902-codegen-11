@@ -61,9 +61,9 @@
           "{{ post.message }}"
         </div>
 
-        <div class="post-tags" v-if="post.tags.length > 0 || (post.customTags && post.customTags.length > 0)">
+        <div class="post-tags" v-if="systemTags(post.tags).length > 0 || (post.customTags && post.customTags.length > 0)">
           <span 
-            v-for="tag in post.tags" 
+            v-for="tag in systemTags(post.tags)" 
             :key="tag.type + '-' + tag.text"
             class="tag"
             :class="'tag-' + tag.type"
@@ -138,7 +138,9 @@ const allTagValues = computed(() => {
   const tagSet = new Set()
   for (const post of allPosts.value) {
     for (const tag of post.tags) {
-      tagSet.add(tag.text)
+      if (tag.type !== 'custom') {
+        tagSet.add(tag.text)
+      }
     }
     if (post.customTags) {
       for (const ct of post.customTags) {
@@ -152,11 +154,16 @@ const allTagValues = computed(() => {
 const filteredPosts = computed(() => {
   if (!selectedGalleryTag.value) return allPosts.value
   return allPosts.value.filter(post => {
-    const tagTexts = post.tags.map(t => t.text)
+    const tagTexts = post.tags.filter(t => t.type !== 'custom').map(t => t.text)
     const customTexts = post.customTags || []
-    return [...tagTexts, ...customTexts].includes(selectedGalleryTag.value)
+    const legacyCustomTexts = post.tags.filter(t => t.type === 'custom').map(t => t.text)
+    return [...tagTexts, ...customTexts, ...legacyCustomTexts].includes(selectedGalleryTag.value)
   })
 })
+
+function systemTags(tags) {
+  return (tags || []).filter(t => t.type !== 'custom')
+}
 
 const demoPosts = [
   {

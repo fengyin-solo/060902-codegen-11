@@ -487,7 +487,7 @@ function confirmHangUp() {
  prev: getContextMessage(selectedLetterToHang.value, selectedMessageToHang.value, -1),
  next: getContextMessage(selectedLetterToHang.value, selectedMessageToHang.value, 1)
  },
- tags: [...(selectedMessageToHang.value.highlights || []), ...customTags.map(t => ({ type: 'custom', text: t }))],
+ tags: [...(selectedMessageToHang.value.highlights || [])],
  customTags: customTags,
  guesses: [],
  anonymous: hangUpOptions.value.anonymous,
